@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no" />
+<title>DCM-Net — Interactive 3D Architecture</title>
+<meta name="description" content="An interactive 3D visualization of DCM-Net, a dual-encoder CNN-Mamba network for medical image segmentation." />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2245%22 fill=%22%230b1220%22/><circle cx=%2250%22 cy=%2250%22 r=%2222%22 fill=%22%2363e6a0%22/></svg>" />
+<link rel="stylesheet" href="./style.css" />
+
+<!-- Pinned CDN import map — no build step required. -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+
+  <div id="canvas-container" aria-hidden="true"></div>
+
+  <div id="loading">
+    <div class="spinner"></div>
+    <p>Building the 3D architecture…</p>
+  </div>
+
+  <header id="top-bar">
+    <div id="title-block">
+      <h1>DCM-Net <span class="dim">— Interactive 3D Architecture</span></h1>
+      <p>Dual-Encoder CNN–Mamba Network with Cross-Branch Fusion · Atabansi et al., <em>BMC Medical Imaging</em> (2025) 25:395</p>
+    </div>
+    <button id="help-btn" class="icon-btn" title="How to use this" aria-label="Help">?</button>
+  </header>
+
+  <aside id="legend">
+    <button id="legend-toggle" class="icon-btn" title="Toggle legend" aria-label="Toggle legend">≡</button>
+    <div id="legend-body">
+      <h2>Legend</h2>
+      <ul>
+        <li><span class="swatch aux"></span> Auxiliary Encoder — Mamba / VSS <small>(global context)</small></li>
+        <li><span class="swatch pri"></span> Primary Encoder — CNN / EfficientNet-B2 <small>(local detail)</small></li>
+        <li><span class="swatch fus"></span> CBFFM <small>(cross-branch fusion)</small></li>
+        <li><span class="swatch dec"></span> Decoder <small>(DFEM blocks)</small></li>
+        <li><span class="swatch seg"></span> Segmentation Head</li>
+      </ul>
+      <p class="hint">Glowing dots = data flowing through the network, stage by stage. Click any block to learn what it does.</p>
+    </div>
+  </aside>
+
+  <section id="info-panel" class="hidden">
+    <button id="info-close" class="icon-btn" aria-label="Close">×</button>
+    <h3 id="info-title"></h3>
+    <p id="info-desc"></p>
+  </section>
+
+  <div id="help-overlay" class="hidden">
+    <div class="help-card">
+      <h2>How to use this</h2>
+      <ul>
+        <li><strong>Rotate:</strong> drag with one finger / left mouse button</li>
+        <li><strong>Zoom:</strong> pinch / scroll wheel</li>
+        <li><strong>Pan:</strong> two-finger drag / right mouse button</li>
+        <li><strong>Learn more:</strong> tap or click any block for a description</li>
+        <li>Use the bottom bar to pause the animation, change its speed, hide labels, auto-rotate, reset the camera, or go fullscreen.</li>
+      </ul>
+      <button id="help-close" class="primary-btn">Got it</button>
+    </div>
+  </div>
+
+  <footer id="bottom-bar">
+    <button id="play-pause-btn" class="bar-btn" title="Play / pause the data-flow animation">⏸ <span>Pause</span></button>
+    <label class="bar-slider" title="Animation speed">
+      <span>Speed</span>
+      <input type="range" id="speed-slider" min="0.25" max="3" step="0.25" value="1" />
+    </label>
+    <button id="labels-btn" class="bar-btn" title="Show/hide labels">🏷 <span>Labels: On</span></button>
+    <button id="rotate-btn" class="bar-btn" title="Toggle auto-rotate">↻ <span>Auto-Rotate: Off</span></button>
+    <button id="reset-view-btn" class="bar-btn" title="Reset camera">⤾ <span>Reset View</span></button>
+    <button id="fullscreen-btn" class="bar-btn" title="Fullscreen">⛶ <span>Fullscreen</span></button>
+  </footer>
+
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>
