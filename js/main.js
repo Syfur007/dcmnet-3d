@@ -1,17 +1,22 @@
 /**
  * main.js — entry point.
- * Sets up the THREE.js renderer/scene/camera, builds the DCM-Net graph,
- * starts the flow animation, and wires up every UI control.
+ * Renderer/camera/controls, the Level-0 ↔ Level-1 drill-down state machine,
+ * the sample-image picker, node click → info panel → "explore inside", and
+ * the pulse + scan-plane "data flowing through this block" visual effects.
  */
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { buildScene } from "./scene.js";
+import { buildMainScene, buildInternalsScene, applySampleToMainScene } from "./scene.js";
 import { FlowSimulator } from "./flow.js";
-import { createInputImageTexture, createMaskTexture } from "./texture.js";
+import { generateSamples } from "./samples.js";
 import { setLabelsVisible } from "./labels.js";
+import { NODES, PALETTE } from "./architecture.js";
+import { makeScanPlane } from "./tensor.js";
 
-// ---------------------------------------------------------------- helpers --
 const $ = (id) => document.getElementById(id);
+const NODE_BY_ID = new Map(NODES.map((n) => [n.id, n]));
+const INTERNALS_WORLD_OFFSET = new THREE.Vector3(0, 260, 0); // parks Level-1 far from Level-0
+const PULSE_DURATION = 0.55;
 
 function showFatalError(err) {
   console.error(err);
@@ -28,16 +33,44 @@ function showFatalError(err) {
     loading.classList.remove("hidden");
   }
 }
-
 window.addEventListener("error", (e) => showFatalError(e.error || e.message));
 window.addEventListener("unhandledrejection", (e) => showFatalError(e.reason));
 
-// ------------------------------------------------------------------- init --
+function disposeGroup(group) {
+  group.traverse((obj) => {
+    if (obj.geometry) obj.geometry.dispose();
+    if (obj.material) {
+      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+      for (const m of mats) { if (m.map) m.map.dispose(); m.dispose(); }
+    }
+  });
+  group.parent?.remove(group);
+}
+
+function makeThumbnailCanvas(sample, px = 52) {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = px;
+  const ctx = canvas.getContext("2d");
+  const grid = Math.sqrt(sample.inputPixels.length / 3);
+  const cell = px / grid;
+  for (let r = 0; r < grid; r++) {
+    for (let c = 0; c < grid; c++) {
+      const i = (r * grid + c) * 3;
+      const R = Math.round(sample.inputPixels[i] * 255);
+      const G = Math.round(sample.inputPixels[i + 1] * 255);
+      const B = Math.round(sample.inputPixels[i + 2] * 255);
+      ctx.fillStyle = `rgb(${R},${G},${B})`;
+      ctx.fillRect(c * cell, r * cell, cell + 0.6, cell + 0.6);
+    }
+  }
+  return canvas;
+}
+
 function init() {
   const container = $("canvas-container");
 
   // ---- renderer -------------------------------------------------------
-  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -45,141 +78,249 @@ function init() {
   renderer.toneMappingExposure = 1.05;
   container.appendChild(renderer.domElement);
 
-  // ---- scene / fog / starfield -----------------------------------------
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x070b12);
-  scene.fog = new THREE.FogExp2(0x070b12, 0.014);
-
+  scene.fog = new THREE.FogExp2(0x070b12, 0.012);
   scene.add(makeStarfield(THREE));
 
-  // ---- camera + controls -------------------------------------------------
-  const camera = new THREE.PerspectiveCamera(52, window.innerWidth / window.innerHeight, 0.1, 300);
-  const DEFAULT_CAM_POS = new THREE.Vector3(3, 6.5, 29);
-  const DEFAULT_TARGET = new THREE.Vector3(1.5, 0, 0);
-  camera.position.copy(DEFAULT_CAM_POS);
+  const camera = new THREE.PerspectiveCamera(52, window.innerWidth / window.innerHeight, 0.1, 900);
+  const MAIN_CAM_POS = new THREE.Vector3(3, 7, 30);
+  const MAIN_TARGET = new THREE.Vector3(0, 0, 0);
+  camera.position.copy(MAIN_CAM_POS);
 
   const controls = new OrbitControls(camera, renderer.domElement);
-  controls.target.copy(DEFAULT_TARGET);
+  controls.target.copy(MAIN_TARGET);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
-  controls.minDistance = 8;
-  controls.maxDistance = 62;
+  controls.minDistance = 3;
+  controls.maxDistance = 90;
   controls.autoRotate = false;
   controls.autoRotateSpeed = 0.9;
   controls.update();
 
-  // ---- lights --------------------------------------------------------
-  scene.add(new THREE.AmbientLight(0x8fa6c9, 0.55));
-  const keyLight = new THREE.DirectionalLight(0xffffff, 1.1);
-  keyLight.position.set(10, 18, 14);
+  scene.add(new THREE.AmbientLight(0x8fa6c9, 0.6));
+  const keyLight = new THREE.DirectionalLight(0xffffff, 1.15);
+  keyLight.position.set(10, 20, 16);
   scene.add(keyLight);
-  const coolFill = new THREE.PointLight(0x4fd3ff, 220, 60);
-  coolFill.position.set(-14, 8, 10);
+  const coolFill = new THREE.PointLight(0x4fd3ff, 260, 70);
+  coolFill.position.set(-14, 9, 12);
   scene.add(coolFill);
-  const warmFill = new THREE.PointLight(0xff9d4d, 220, 60);
-  warmFill.position.set(-14, -8, 10);
+  const warmFill = new THREE.PointLight(0xff9d4d, 260, 70);
+  warmFill.position.set(-14, -9, 12);
   scene.add(warmFill);
-  const rimLight = new THREE.PointLight(0x63e6a0, 180, 60);
-  rimLight.position.set(16, 0, 14);
+  const rimLight = new THREE.PointLight(0x63e6a0, 220, 70);
+  rimLight.position.set(16, 0, 16);
   scene.add(rimLight);
+  const zoomLight = new THREE.PointLight(0xffffff, 200, 60);
+  zoomLight.position.copy(INTERNALS_WORLD_OFFSET).add(new THREE.Vector3(0, 4, 10));
+  scene.add(zoomLight);
 
-  // ---- build the DCM-Net graph -----------------------------------------
-  const inputTexture = createInputImageTexture(THREE);
-  const maskTexture = createMaskTexture(THREE);
-  const { nodeMeshes, labelSprites, raycastTargets, edges } = buildScene(
-    THREE, scene, { inputTexture, maskTexture }
-  );
+  // ---- data + Level-0 scene ----------------------------------------------
+  const GRID_RES = 24;
+  const samples = generateSamples(GRID_RES);
+  let sampleIndex = 0;
+  const main = buildMainScene(THREE, scene, samples, sampleIndex);
+  const mainFlow = new FlowSimulator(THREE, main.root, { edges: main.edges, nodeMeshes: main.nodeMeshes, onNodeFire });
+  mainFlow.start();
 
-  // ---- node "fire" pulse visual (scale + emissive flash) ----------------
-  const pulseState = new Map(); // nodeId -> { start, duration }
+  // ---- shared state: which level is currently being viewed ---------------
+  let level = "main";
+  let activeNodeInfo = main.nodeInfo;
+  let activeRaycastTargets = main.raycastTargets;
+  let activeFlow = mainFlow;
+  let internalsData = null;
+  let internalsFlow = null;
+  let preZoomCam = null;
+
+  const pulseState = new Map();  // nodeId -> { start, duration }
+  const activeScans = [];        // { plane, start, duration, halfX, thickness, basePos }
   const clock = new THREE.Clock();
 
   function onNodeFire(nodeId) {
-    pulseState.set(nodeId, { start: clock.getElapsedTime(), duration: 0.55 });
+    pulseState.set(nodeId, { start: clock.getElapsedTime(), duration: PULSE_DURATION });
+
+    const info = activeNodeInfo.get(nodeId);
+    if (!info) return;
+    const tv = info.tv;
+    const role = tv.mesh.userData.role;
+    const colorHex = PALETTE[role] ?? 0xffffff;
+
+    const plane = makeScanPlane(THREE, tv, colorHex);
+    plane.visible = true;
+    const parentGroup = tv.mesh.parent;
+    parentGroup.add(plane);
+    plane.position.copy(tv.mesh.position);
+    plane.position.x = tv.mesh.position.x - tv.halfX;
+    activeScans.push({ plane, start: clock.getElapsedTime(), duration: PULSE_DURATION, halfX: tv.halfX, thickness: tv.thickness, baseY: tv.mesh.position.y, baseZ: tv.mesh.position.z, baseX: tv.mesh.position.x });
   }
 
-  function applyPulseVisuals() {
+  function applyFX() {
     const now = clock.getElapsedTime();
     for (const [id, p] of pulseState) {
       const elapsed = now - p.start;
+      const info = activeNodeInfo.get(id);
+      const mesh = info?.tv?.mesh;
       if (elapsed >= p.duration) {
         pulseState.delete(id);
-        const obj = nodeMeshes.get(id);
-        const target = obj?.userData?.pulseTarget;
-        if (target) target.scale.setScalar(1);
-        if (target?.material && "emissiveIntensity" in target.material) {
-          target.material.emissiveIntensity = 0.32;
-        }
+        if (mesh) { mesh.scale.setScalar(1); mesh.material.emissiveIntensity = (mesh === selectedMesh) ? 0.85 : 0.28; }
         continue;
       }
-      const factor = Math.sin((elapsed / p.duration) * Math.PI); // 0 -> 1 -> 0
-      const obj = nodeMeshes.get(id);
-      const target = obj?.userData?.pulseTarget;
-      if (target) target.scale.setScalar(1 + 0.4 * factor);
-      if (target?.material && "emissiveIntensity" in target.material) {
-        target.material.emissiveIntensity = 0.32 + 1.1 * factor;
+      const factor = Math.sin((elapsed / p.duration) * Math.PI);
+      if (mesh) {
+        mesh.scale.setScalar(1 + 0.35 * factor);
+        mesh.material.emissiveIntensity = 0.28 + 1.15 * factor;
       }
     }
+
+    for (let i = activeScans.length - 1; i >= 0; i--) {
+      const s = activeScans[i];
+      const t = (now - s.start) / s.duration;
+      if (t >= 1) {
+        disposeGroup(s.plane);
+        activeScans.splice(i, 1);
+        continue;
+      }
+      s.plane.position.x = s.baseX - s.halfX + t * s.thickness;
+      s.plane.material.opacity = 0.7 * (1 - Math.abs(2 * t - 1));
+    }
   }
 
-  // ---- flow simulation ---------------------------------------------------
-  const flow = new FlowSimulator(THREE, scene, { edges, nodeMeshes, onNodeFire });
-  flow.start();
-
-  // ---- interaction: click a node for info --------------------------------
+  // ---- interaction: raycast + info panel ----------------------------------
   const raycaster = new THREE.Raycaster();
   const pointerNDC = new THREE.Vector2();
-  let selectedId = null;
+  const infoPanel = $("info-panel"), infoTitle = $("info-title"), infoDesc = $("info-desc"), infoZoomBtn = $("info-zoom-btn");
+  let selectedMesh = null;
+  let selectedMainNodeId = null;
 
-  function setSelected(id) {
-    if (selectedId && nodeMeshes.has(selectedId)) {
-      const prev = nodeMeshes.get(selectedId).userData.pulseTarget;
-      if (prev?.material && "emissiveIntensity" in prev.material) prev.material.emissiveIntensity = 0.32;
+  function clearSelection() {
+    if (selectedMesh?.material && "emissiveIntensity" in selectedMesh.material) {
+      selectedMesh.material.emissiveIntensity = 0.28;
     }
-    selectedId = id;
-    if (id && nodeMeshes.has(id)) {
-      const obj = nodeMeshes.get(id);
-      const t = obj.userData.pulseTarget;
-      if (t?.material && "emissiveIntensity" in t.material) t.material.emissiveIntensity = 0.9;
-      showInfo(obj.userData.title, obj.userData.desc);
-    } else {
-      hideInfo();
-    }
+    selectedMesh = null; selectedMainNodeId = null;
+    infoPanel.classList.add("hidden");
   }
 
-  function pointerToNodeId(clientX, clientY) {
+  function selectMesh(mesh) {
+    clearSelection();
+    if (!mesh) return;
+    selectedMesh = mesh;
+    if (mesh.material && "emissiveIntensity" in mesh.material) mesh.material.emissiveIntensity = 0.85;
+    infoTitle.textContent = mesh.userData.title || "";
+    infoDesc.textContent = mesh.userData.desc || "";
+    const canZoom = level === "main" && mesh.userData.zoomable;
+    infoZoomBtn.classList.toggle("hidden", !canZoom);
+    if (canZoom) selectedMainNodeId = mesh.userData.nodeId;
+    infoPanel.classList.remove("hidden");
+  }
+
+  function pointerToMesh(clientX, clientY) {
     const rect = renderer.domElement.getBoundingClientRect();
     pointerNDC.x = ((clientX - rect.left) / rect.width) * 2 - 1;
     pointerNDC.y = -((clientY - rect.top) / rect.height) * 2 + 1;
     raycaster.setFromCamera(pointerNDC, camera);
-    const hits = raycaster.intersectObjects(raycastTargets, true);
-    return hits.length ? hits[0].object.userData.nodeId : null;
+    const hits = raycaster.intersectObjects(activeRaycastTargets, false);
+    return hits.length ? hits[0].object : null;
   }
 
   let downX = 0, downY = 0;
   renderer.domElement.addEventListener("pointerdown", (e) => { downX = e.clientX; downY = e.clientY; });
   renderer.domElement.addEventListener("pointerup", (e) => {
-    // ignore drags (orbit gestures) — only treat as a "click" if the pointer barely moved
-    if (Math.hypot(e.clientX - downX, e.clientY - downY) > 6) return;
-    const id = pointerToNodeId(e.clientX, e.clientY);
-    setSelected(id);
+    if (Math.hypot(e.clientX - downX, e.clientY - downY) > 6) return; // was a drag, not a tap
+    selectMesh(pointerToMesh(e.clientX, e.clientY));
   });
   renderer.domElement.addEventListener("pointermove", (e) => {
-    const id = pointerToNodeId(e.clientX, e.clientY);
-    renderer.domElement.style.cursor = id ? "pointer" : "grab";
+    renderer.domElement.style.cursor = pointerToMesh(e.clientX, e.clientY) ? "pointer" : "grab";
   });
+  $("info-close").addEventListener("click", clearSelection);
 
-  // ---- info panel DOM ----------------------------------------------------
-  const infoPanel = $("info-panel");
-  const infoTitle = $("info-title");
-  const infoDesc = $("info-desc");
-  function showInfo(title, desc) {
-    infoTitle.textContent = title;
-    infoDesc.textContent = desc;
-    infoPanel.classList.remove("hidden");
+  // ---- camera tween helper -------------------------------------------------
+  let camTween = null;
+  function flyTo(pos, target, duration = 1.0) {
+    camTween = { t: 0, duration, fromPos: camera.position.clone(), toPos: pos.clone(), fromTarget: controls.target.clone(), toTarget: target.clone() };
   }
-  function hideInfo() { infoPanel.classList.add("hidden"); }
-  $("info-close").addEventListener("click", () => setSelected(null));
+  function easeInOutCubic(x) { return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; }
+
+  // ---- Level-0 <-> Level-1 drill-down ---------------------------------------
+  const backBtn = $("back-btn");
+  const samplesPanel = $("samples-panel");
+  const crumbTitle = $("crumb-title"), crumbSub = $("crumb-sub");
+  const DEFAULT_CRUMB_TITLE = crumbTitle.innerHTML, DEFAULT_CRUMB_SUB = crumbSub.innerHTML;
+
+  function enterNode(nodeId) {
+    const node = NODE_BY_ID.get(nodeId);
+    if (!node || !node.zoomable) return;
+
+    preZoomCam = { pos: camera.position.clone(), target: controls.target.clone() };
+    mainFlow.setPaused(true);
+    clearSelection();
+
+    internalsData = buildInternalsScene(THREE, node.internals, node.title);
+    internalsData.root.position.copy(INTERNALS_WORLD_OFFSET);
+    scene.add(internalsData.root);
+    internalsFlow = new FlowSimulator(THREE, internalsData.root, { edges: internalsData.edges, nodeMeshes: internalsData.nodeMeshes, onNodeFire });
+    internalsFlow.setPaused(!playing);
+    internalsFlow.setSpeed(currentSpeed);
+    internalsFlow.start();
+
+    level = "internals";
+    activeNodeInfo = internalsData.nodeInfo;
+    activeRaycastTargets = internalsData.raycastTargets;
+    activeFlow = internalsFlow;
+
+    crumbTitle.innerHTML = `${node.title} <span class="dim">— ${internalsData.label}</span>`;
+    crumbSub.textContent = "Click any part for details, or press Back to return to the full architecture.";
+    backBtn.classList.remove("hidden");
+    samplesPanel.classList.add("hidden");
+
+    const span = internalsData.bounds.maxX - internalsData.bounds.minX;
+    const dist = span * 0.85 + 6;
+    const centerWorld = new THREE.Vector3(internalsData.bounds.centerX, 0, 0).add(INTERNALS_WORLD_OFFSET);
+    flyTo(centerWorld.clone().add(new THREE.Vector3(1.5, 3.2, dist)), centerWorld, 1.1);
+  }
+
+  function exitToMain() {
+    if (level !== "internals") return;
+    mainFlow.setPaused(!playing);
+    if (internalsData) disposeGroup(internalsData.root);
+    internalsData = null; internalsFlow = null;
+
+    level = "main";
+    activeNodeInfo = main.nodeInfo;
+    activeRaycastTargets = main.raycastTargets;
+    activeFlow = mainFlow;
+
+    crumbTitle.innerHTML = DEFAULT_CRUMB_TITLE;
+    crumbSub.innerHTML = DEFAULT_CRUMB_SUB;
+    backBtn.classList.add("hidden");
+    samplesPanel.classList.remove("hidden");
+    clearSelection();
+
+    if (preZoomCam) flyTo(preZoomCam.pos, preZoomCam.target, 1.0);
+  }
+
+  backBtn.addEventListener("click", exitToMain);
+  infoZoomBtn.addEventListener("click", () => { if (selectedMainNodeId) enterNode(selectedMainNodeId); });
+  window.addEventListener("keydown", (e) => { if (e.key === "Escape") { if (level === "internals") exitToMain(); else clearSelection(); } });
+
+  // ---- sample picker ---------------------------------------------------
+  const samplesList = $("samples-list");
+  samples.forEach((s, i) => {
+    const btn = document.createElement("button");
+    btn.className = "sample-thumb" + (i === 0 ? " active" : "");
+    btn.title = `${s.label} (${s.sub}) — synthetic sample`;
+    btn.appendChild(makeThumbnailCanvas(s));
+    const nameTag = document.createElement("span");
+    nameTag.className = "sample-name";
+    nameTag.textContent = s.label;
+    btn.appendChild(nameTag);
+    btn.addEventListener("click", () => {
+      if (sampleIndex === i) return;
+      sampleIndex = i;
+      applySampleToMainScene(THREE, main, samples, sampleIndex);
+      [...samplesList.children].forEach((c, ci) => c.classList.toggle("active", ci === i));
+    });
+    samplesList.appendChild(btn);
+  });
 
   // ---- resize --------------------------------------------------------
   window.addEventListener("resize", () => {
@@ -188,34 +329,30 @@ function init() {
     renderer.setSize(window.innerWidth, window.innerHeight);
   });
 
-  // ---- camera reset tween -------------------------------------------------
-  let camTween = null;
-  function resetView() {
-    camTween = {
-      t: 0, duration: 0.8,
-      fromPos: camera.position.clone(), toPos: DEFAULT_CAM_POS.clone(),
-      fromTarget: controls.target.clone(), toTarget: DEFAULT_TARGET.clone(),
-    };
-  }
-  function easeInOutCubic(x) { return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; }
-
   // ============================================================ UI wiring ==
   let playing = true;
+  let currentSpeed = 1;
   const playPauseBtn = $("play-pause-btn");
   playPauseBtn.addEventListener("click", () => {
     playing = !playing;
-    flow.setPaused(!playing);
+    mainFlow.setPaused(!playing);
+    if (internalsFlow) internalsFlow.setPaused(!playing);
     playPauseBtn.innerHTML = playing ? "⏸ <span>Pause</span>" : "▶ <span>Play</span>";
     playPauseBtn.classList.toggle("active", !playing);
   });
 
-  $("speed-slider").addEventListener("input", (e) => flow.setSpeed(parseFloat(e.target.value)));
+  $("speed-slider").addEventListener("input", (e) => {
+    currentSpeed = parseFloat(e.target.value);
+    mainFlow.setSpeed(currentSpeed);
+    if (internalsFlow) internalsFlow.setSpeed(currentSpeed);
+  });
 
   let labelsOn = true;
   const labelsBtn = $("labels-btn");
   labelsBtn.addEventListener("click", () => {
     labelsOn = !labelsOn;
-    setLabelsVisible(labelSprites, labelsOn);
+    setLabelsVisible(main.labelSprites, labelsOn);
+    if (internalsData) setLabelsVisible(internalsData.labelSprites, labelsOn);
     labelsBtn.innerHTML = `🏷 <span>Labels: ${labelsOn ? "On" : "Off"}</span>`;
     labelsBtn.classList.toggle("active", labelsOn);
   });
@@ -227,19 +364,18 @@ function init() {
     rotateBtn.classList.toggle("active", controls.autoRotate);
   });
 
-  $("reset-view-btn").addEventListener("click", resetView);
+  $("reset-view-btn").addEventListener("click", () => {
+    if (level === "internals") exitToMain();
+    else flyTo(MAIN_CAM_POS, MAIN_TARGET, 0.8);
+  });
 
   const fsBtn = $("fullscreen-btn");
   fsBtn.addEventListener("click", () => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen?.();
-    } else {
-      document.exitFullscreen?.();
-    }
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
+    else document.exitFullscreen?.();
   });
   document.addEventListener("fullscreenchange", () => {
-    const isFs = !!document.fullscreenElement;
-    fsBtn.innerHTML = `⛶ <span>${isFs ? "Exit Fullscreen" : "Fullscreen"}</span>`;
+    fsBtn.innerHTML = `⛶ <span>${document.fullscreenElement ? "Exit Fullscreen" : "Fullscreen"}</span>`;
   });
 
   const helpOverlay = $("help-overlay");
@@ -266,26 +402,22 @@ function init() {
       if (camTween.t >= 1) camTween = null;
     }
 
-    flow.update(dt);
-    applyPulseVisuals();
+    activeFlow.update(dt);
+    applyFX();
     controls.update();
     renderer.render(scene, camera);
     requestAnimationFrame(tick);
   }
 
-  // first frame is ready synchronously (everything here is procedural —
-  // no textures/models to wait on), so we can dismiss the loading splash now.
-  requestAnimationFrame(() => {
-    $("loading").classList.add("hidden");
-  });
+  requestAnimationFrame(() => $("loading").classList.add("hidden"));
   tick();
 }
 
 function makeStarfield(THREE) {
-  const COUNT = 900;
+  const COUNT = 1000;
   const positions = new Float32Array(COUNT * 3);
   for (let i = 0; i < COUNT; i++) {
-    const r = 60 + Math.random() * 140;
+    const r = 70 + Math.random() * 220;
     const theta = Math.random() * Math.PI * 2;
     const phi = Math.acos(2 * Math.random() - 1);
     positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
@@ -294,7 +426,7 @@ function makeStarfield(THREE) {
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  const mat = new THREE.PointsMaterial({ color: 0x9fb0bd, size: 0.55, transparent: true, opacity: 0.55 });
+  const mat = new THREE.PointsMaterial({ color: 0x9fb0bd, size: 0.55, transparent: true, opacity: 0.5 });
   return new THREE.Points(geo, mat);
 }
 

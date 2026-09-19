@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no" />
 <title>DCM-Net — Interactive 3D Architecture</title>
-<meta name="description" content="An interactive 3D visualization of DCM-Net, a dual-encoder CNN-Mamba network for medical image segmentation." />
+<meta name="description" content="A TensorSpace-style interactive 3D visualization of DCM-Net, a dual-encoder CNN-Mamba network for medical image segmentation." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2245%22 fill=%22%230b1220%22/><circle cx=%2250%22 cy=%2250%22 r=%2222%22 fill=%22%2363e6a0%22/></svg>" />
 <link rel="stylesheet" href="./style.css" />
 
@@ -29,11 +29,13 @@
 
   <header id="top-bar">
     <div id="title-block">
-      <h1>DCM-Net <span class="dim">— Interactive 3D Architecture</span></h1>
-      <p>Dual-Encoder CNN–Mamba Network with Cross-Branch Fusion · Atabansi et al., <em>BMC Medical Imaging</em> (2025) 25:395</p>
+      <h1 id="crumb-title">DCM-Net <span class="dim">— Interactive 3D Architecture</span></h1>
+      <p id="crumb-sub">Dual-Encoder CNN–Mamba Network with Cross-Branch Fusion · Atabansi et al., <em>BMC Medical Imaging</em> (2025) 25:395</p>
     </div>
     <button id="help-btn" class="icon-btn" title="How to use this" aria-label="Help">?</button>
   </header>
+
+  <button id="back-btn" class="pill-btn hidden">← Back to full architecture</button>
 
   <aside id="legend">
     <button id="legend-toggle" class="icon-btn" title="Toggle legend" aria-label="Toggle legend">≡</button>
@@ -46,14 +48,20 @@
         <li><span class="swatch dec"></span> Decoder <small>(DFEM blocks)</small></li>
         <li><span class="swatch seg"></span> Segmentation Head</li>
       </ul>
-      <p class="hint">Glowing dots = data flowing through the network, stage by stage. Click any block to learn what it does.</p>
+      <p class="hint">Each block is a grid of cubes: position = pixel, depth = channel. Glowing sweeps show data flowing stage by stage. Click any block to learn more — zoomable blocks let you look inside.</p>
     </div>
   </aside>
+
+  <section id="samples-panel">
+    <h2>Sample Image</h2>
+    <div id="samples-list"></div>
+  </section>
 
   <section id="info-panel" class="hidden">
     <button id="info-close" class="icon-btn" aria-label="Close">×</button>
     <h3 id="info-title"></h3>
     <p id="info-desc"></p>
+    <button id="info-zoom-btn" class="primary-btn hidden">🔍 Explore Inside →</button>
   </section>
 
   <div id="help-overlay" class="hidden">
@@ -64,6 +72,8 @@
         <li><strong>Zoom:</strong> pinch / scroll wheel</li>
         <li><strong>Pan:</strong> two-finger drag / right mouse button</li>
         <li><strong>Learn more:</strong> tap or click any block for a description</li>
+        <li><strong>Look inside a block:</strong> click it, then press "Explore Inside" — press "← Back" to return</li>
+        <li><strong>Try a different sample:</strong> pick a thumbnail from the "Sample Image" panel</li>
         <li>Use the bottom bar to pause the animation, change its speed, hide labels, auto-rotate, reset the camera, or go fullscreen.</li>
       </ul>
       <button id="help-close" class="primary-btn">Got it</button>

@@ -1,7 +1,7 @@
 # DCM-Net — Interactive 3D Architecture Visualization
 
-An interactive, animated **3D diagram** of **DCM-Net**, the dual-encoder
-CNN–Mamba network with cross-branch fusion proposed in:
+A **TensorSpace.js-style**, animated **3D diagram** of **DCM-Net**, the
+dual-encoder CNN–Mamba network with cross-branch fusion proposed in:
 
 > Atabansi, C.C., Wang, S., Li, H., Nie, J., Xiang, L., Zhang, C., Liu, H.,
 > Zhou, X., & Li, D. (2025). *DCM-Net: dual-encoder CNN-Mamba network with
@@ -10,8 +10,8 @@ CNN–Mamba network with cross-branch fusion proposed in:
 
 Built with plain **[Three.js](https://threejs.org/)**, no build step, no
 framework — just static files you can open in a browser or publish on
-**GitHub Pages**. It's designed to run full-screen on a classroom/lab
-projector or an interactive smart board.
+**GitHub Pages**. Designed to run full-screen on a classroom/lab projector
+or an interactive smart board.
 
 ![status](https://img.shields.io/badge/build-static%20site-63e6a0)
 ![three.js](https://img.shields.io/badge/three.js-0.186.0-4fd3ff)
@@ -20,31 +20,43 @@ projector or an interactive smart board.
 
 ## What it shows
 
-* The **input image** floating on the left, flowing into **two parallel
-  encoders**:
-  * **Auxiliary Encoder** (cyan) — Visual State-Space (Mamba/VSS) blocks,
-    4 stages, capturing *global* context.
-  * **Primary Encoder** (orange) — a pretrained EfficientNet-B2 CNN,
-    4 stages, capturing *local* detail.
-* Four **CBFFM** fusion nodes (gold) — one per stage — where both branches
-  are combined, exactly per the paper's equations (`F_s`, `AP_f^s`).
-* A **3-stage decoder** (green, DFEM blocks) that upsamples and fuses in the
-  skip connections from each CBFFM stage — the bowed violet tubes.
-* A **segmentation head** (pink) producing the final **predicted mask** on
-  the right.
-* Small glowing spheres continuously animate along the connections, and each
-  block gently "pulses" the instant its inputs arrive — a literal, physically
-  faithful simulation of the network's actual data-dependency graph (a CBFFM
-  node only fires once *both* its encoder inputs have arrived; a decoder
-  block only fires once *both* the upsample path *and* its skip connection
-  have arrived).
-* Click/tap any block for a plain-language description and the relevant
-  formula from the paper.
+Every block — the input image, every encoder stage, every fusion module,
+every decoder block, the output mask — is drawn as a **3D grid of small
+cubes**, TensorSpace-style:
 
-The input photo and predicted mask are **original, procedurally generated
-placeholder graphics** (drawn at runtime with the HTML canvas API) — not the
-paper's own copyrighted figures — so this repository is safe to publish
-publicly. Swap in your own images any time (see below).
+* **Position** in the grid = a pixel / spatial location.
+* **Depth** (stacked along the flow direction) = channel count.
+* The input image's 3 depth-slices are literally its **R, G, B channels**;
+  the output's single slice is the predicted mask (bright = foreground).
+* Every block's flat face points **down the pipeline** ("network-facing"),
+  not at the camera — data visibly flows face-to-face from one block into
+  the next.
+
+On top of that:
+
+* **Two parallel encoders**: Auxiliary (cyan, Mamba/VSS, *global* context)
+  and Primary (orange, EfficientNet-B2 CNN, *local* detail).
+* **Four CBFFM fusion blocks** (gold) — one per stage — plus a **3-stage
+  decoder** (green, DFEM) with the paper's real skip connections (violet,
+  bowed so they read clearly).
+* A **Segmentation Head** (pink) producing the final mask.
+* Small glowing **sweeps travel through each block's depth** the instant
+  its real inputs have arrived — a CBFFM block only lights up once *both*
+  its encoder inputs land; a decoder block only lights up once *both* the
+  upsample path *and* its skip connection land. It's a literal simulation
+  of the network's actual data-dependency graph, not a decorative loop.
+* **Click any block → a description pops up.** For every encoder stage,
+  every CBFFM module, every decoder block, and the segmentation head, an
+  **"🔍 Explore Inside"** button appears — click it to fly the camera into
+  a self-contained breakdown of that block's real internal computation
+  (CBFFM and DFEM are modeled exactly from the paper's own equations; the
+  VSS block and the EfficientNet-B2 block are faithful, representative
+  breakdowns). Press **"← Back"** to fly back out.
+* A **sample picker** (bottom-right) swaps the input image / mask for one
+  of four synthetic, procedurally-generated samples themed after the
+  paper's four modalities (skin lesion, polyp, thyroid nodule, pancreas) —
+  none are real medical photographs, so this repo is safe to publish
+  publicly forever.
 
 ---
 
@@ -55,13 +67,17 @@ publicly. Swap in your own images any time (see below).
 ├── index.html          # page shell, UI overlay markup, CDN import map
 ├── style.css           # dark "smart-board" theme for the overlay UI
 ├── js/
-│   ├── architecture.js # DATA ONLY: every node/edge of DCM-Net (edit here!)
-│   ├── scene.js        # turns architecture.js into THREE.js meshes/tubes
-│   ├── flow.js         # the data-flow / "pulse" animation engine
-│   ├── labels.js       # floating text-sprite labels
-│   ├── texture.js      # procedural input-image + mask canvas textures
-│   └── main.js         # renderer, camera, controls, UI wiring, render loop
-├── .nojekyll            # tells GitHub Pages to serve files as-is
+│   ├── architecture.js # DATA ONLY: every block + connection + the
+│   │                    "look inside" sub-graphs (edit here!)
+│   ├── tensor.js        # the instanced-cube "tensor volume" renderer
+│   ├── scene.js         # turns architecture.js into THREE.js objects,
+│   │                    at both the full-pipeline and "zoomed in" levels
+│   ├── flow.js          # the data-flow / "pulse" animation engine
+│   ├── labels.js        # floating text-sprite labels
+│   ├── samples.js       # 4 procedural sample image+mask generators
+│   └── main.js          # renderer, camera, controls, drill-down state
+│                         machine, sample picker, render loop
+├── .nojekyll
 ├── LICENSE
 └── README.md
 ```
@@ -118,35 +134,25 @@ Then open `http://localhost:8000`.
 5. Wait ~1 minute, then open the URL GitHub gives you (usually
    `https://<your-username>.github.io/<your-repo>/`).
 
-That's it — no CI, no build step required.
+No CI, no build step required.
 
 ---
 
 ## Using this on a smart board / projector
 
-* Press the **⛶ Fullscreen** button (bottom bar) for a distraction-free view.
-* One-finger drag rotates, pinch (or scroll) zooms, two-finger drag pans —
-  all standard `OrbitControls` gestures, touch and mouse both work.
-* Tap any block to pop up a short explanation — handy for walking an
-  audience through the architecture live.
-* Use **Speed** to slow the animation down while explaining a specific stage,
-  or **Pause** to freeze it entirely.
-* **Reset View** smoothly returns the camera to the default framing if
-  someone (or a curious student) spins it out of view.
-
----
-
-## Customizing
-
-* **Change the architecture layout / labels / descriptions** → edit
-  `js/architecture.js` only. Positions, channel counts, colors, titles and
-  descriptions all live in that one file as plain data.
-* **Use your own input image / mask** instead of the generated placeholder →
-  in `js/scene.js`, swap the `CanvasTexture`s from `texture.js` for
-  `new THREE.TextureLoader().load('assets/your-image.jpg')`, and add your
-  image file under `assets/`.
-* **Change colors** → edit the `PALETTE` object at the top of
-  `js/architecture.js` and the matching CSS variables in `style.css`.
+* Press **⛶ Fullscreen** (bottom bar) for a distraction-free view.
+* One-finger drag rotates, pinch (or scroll) zooms, two-finger drag pans.
+* Tap any block for a short explanation; tap **🔍 Explore Inside** on a
+  zoomable block (every encoder stage, CBFFM, decoder block, and the
+  segmentation head) to fly in and see its real internal steps.
+* Press **← Back** (top-left, appears once you're zoomed in) or **Esc** to
+  return to the full architecture.
+* Swap the input sample from the picker (bottom-right) to show the pipeline
+  reacting to a different "image" — the R/G/B input cubes and the mask
+  output cubes update instantly.
+* Use **Speed** to slow the animation while explaining a stage, or **Pause**
+  to freeze it entirely. **Reset View** returns the camera to the default
+  framing (or backs out of a zoomed-in view first).
 
 ---
 
@@ -157,7 +163,8 @@ That's it — no CI, no build step required.
   [CC BY-NC-ND 4.0](https://creativecommons.org/licenses/by-nc-nd/4.0/).
   This project is an independent, original educational visualization of the
   publicly described network structure — it does not reproduce any of the
-  paper's figures, text, or data.
+  paper's figures, text, or data. The sample images are procedurally
+  generated placeholders, not real medical photographs.
 * **Code in this repository**: MIT-licensed — see [`LICENSE`](./LICENSE).
   Feel free to fork, adapt, and reuse for your own coursework.
 * Built by **Syfur Rahman** (Roll 21CSE032, Session 2020–21), BSc CSE,
