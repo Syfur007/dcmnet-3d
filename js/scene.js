@@ -43,7 +43,7 @@ function addTube(THREE, root, curve, colorHex, skip) {
 }
 
 function labelFor(THREE, root, text, worldPos, node, opts = {}) {
-  const label = makeLabelSprite(THREE, text, { fontSize: opts.fontSize || 38 });
+  const label = makeLabelSprite(THREE, text, { fontSize: opts.fontSize || 20 });
   label.position.set(worldPos.x, worldPos.y + (opts.dy ?? 0), worldPos.z + (opts.dz ?? 0.15));
   root.add(label);
   return label;
@@ -62,14 +62,14 @@ export function buildMainScene(THREE, scene, samples, sampleIndex) {
 
   for (const node of NODES) {
     const pos = new THREE.Vector3(...node.pos);
-    let pixels = null, channelSlices = false, maskColor = null;
-    if (node.pixelSource === "input") { pixels = samples[sampleIndex].inputPixels; channelSlices = true; }
+    let pixels = null, channelSlices = false, channelBoost = false, maskColor = null;
+    if (node.pixelSource === "input") { pixels = samples[sampleIndex].inputPixels; channelBoost = true; }
     if (node.pixelSource === "mask") { pixels = samples[sampleIndex].maskPixels; maskColor = node.maskColor; }
 
     const tv = buildTensorVolume(THREE, {
       grid: node.grid, depth: node.depth,
       colorHex: PALETTE[node.role] ?? 0xffffff,
-      pixels, channelSlices, maskColorHex: maskColor,
+      pixels, channelSlices, channelBoost, maskColorHex: maskColor,
     });
     tv.mesh.position.copy(pos);
     tv.mesh.userData.nodeId = node.id;
@@ -115,7 +115,8 @@ export function applySampleToMainScene(THREE, mainScene, samples, sampleIndex) {
       grid: node.grid, depth: node.depth,
       colorHex: PALETTE[node.role] ?? 0xffffff,
       pixels,
-      channelSlices: id === "input",
+      channelSlices: false,
+      channelBoost: id === "input",
       maskColorHex: id === "output" ? node.maskColor : null,
     });
     tv.mesh.position.copy(info.pos);

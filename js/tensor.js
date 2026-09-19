@@ -32,26 +32,30 @@ const GAP_FACTOR = 0.24;   // fraction of pitch left empty between cubes (visual
  *                       colors each depth-slice as ONE color channel only
  *                       (slice 0 = red intensity, 1 = green, 2 = blue) — a
  *                       genuinely accurate "this is the R/G/B channel" view.
- *   maskColorHex     - OPTIONAL: for single-channel outputs, tints foreground
- *                       cubes (pixels[i] bright) with this color.
+ *   channelBoost      - OPTIONAL: subtly emphasizes the matching RGB channel
+ *                       on each input depth slice while retaining full color.
+ *   maskColorHex     - OPTIONAL: retained for tensor API compatibility; mask
+ *                       pixels are rendered as grayscale black-to-white.
  */
 export function buildTensorVolume(THREE, opts) {
   const {
     grid, depth, colorHex = 0xffffff,
-    pixels = null, channelSlices = false, maskColorHex = null,
+    pixels = null, channelSlices = false, channelBoost = false, maskColorHex = null,
   } = opts;
 
   const cubeSize = PITCH * (1 - GAP_FACTOR);
   const geo = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
   const count = Math.max(1, grid * grid * depth);
 
-  const mat = new THREE.MeshStandardMaterial({
-    color: 0xffffff, // per-instance color drives the actual look
-    emissive: new THREE.Color(colorHex),
-    emissiveIntensity: 0.28,
-    metalness: 0.25,
-    roughness: 0.55,
-  });
+  const mat = pixels
+    ? new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false })
+    : new THREE.MeshStandardMaterial({
+      color: 0xffffff, // per-instance color drives the actual look
+      emissive: new THREE.Color(colorHex),
+      emissiveIntensity: 0.28,
+      metalness: 0.25,
+      roughness: 0.55,
+    });
 
   const mesh = new THREE.InstancedMesh(geo, mat, count);
   mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
@@ -80,7 +84,13 @@ export function buildTensorVolume(THREE, opts) {
         let col;
         if (pixels) {
           const pi = (r * grid + c) * 3;
-          if (channelSlices && depth >= 3) {
+          if (channelBoost && depth >= 3) {
+            const red = pixels[pi], green = pixels[pi + 1], blue = pixels[pi + 2];
+            const boost = (value, amount) => Math.min(1, value * amount);
+            col = d === 0 ? new THREE.Color(boost(red, 1.18), boost(green, 0.88), boost(blue, 0.88))
+                : d === 1 ? new THREE.Color(boost(red, 0.88), boost(green, 1.18), boost(blue, 0.88))
+                : new THREE.Color(boost(red, 0.88), boost(green, 0.88), boost(blue, 1.18));
+          } else if (channelSlices && depth >= 3) {
             // slice d shows ONLY that RGB channel's intensity
             const v = pixels[pi + Math.min(d, 2)];
             col = d === 0 ? new THREE.Color(v, v * 0.18, v * 0.18)
@@ -88,7 +98,7 @@ export function buildTensorVolume(THREE, opts) {
                 : new THREE.Color(v * 0.18, v * 0.18, v);
           } else if (maskColorHex !== null) {
             const v = pixels[pi]; // mask stored as repeated single value in R
-            col = new THREE.Color(0x05070a).lerp(new THREE.Color(maskColorHex), v);
+            col = new THREE.Color(0x05070a).lerp(new THREE.Color(0xffffff), v);
           } else {
             col = new THREE.Color(pixels[pi], pixels[pi + 1], pixels[pi + 2]);
           }

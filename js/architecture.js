@@ -116,9 +116,9 @@ const AUX_Y = 4.9, PRI_Y = -4.9;
 export const NODES = [
   {
     id: "input", role: "io", pos: [X(inputX), 0, 0], grid: INPUT_GRID, depth: INPUT_DEPTH,
-    pixelSource: "input", channelSlices: true,
+    pixelSource: "input",
     title: "Input Image", zoomable: false,
-    desc: "A medical image tensor I ∈ ℝ^(C×W×H). Each cube is one (down-sampled) pixel; the 3 depth slices are the R, G, B channels. Flows into BOTH encoder branches at once.",
+    desc: "A medical image tensor I ∈ ℝ^(C×W×H). Each cube is one (down-sampled) pixel; the 3 depth slices preserve the RGB channel depth while retaining full-color pixels for readability. Flows into BOTH encoder branches at once.",
   },
 
   ...[0, 1, 2, 3].map((i) => ({

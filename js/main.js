@@ -66,7 +66,7 @@ function makeThumbnailCanvas(sample, px = 52) {
   return canvas;
 }
 
-function init() {
+async function init() {
   const container = $("canvas-container");
 
   // ---- renderer -------------------------------------------------------
@@ -117,7 +117,7 @@ function init() {
 
   // ---- data + Level-0 scene ----------------------------------------------
   const GRID_RES = 24;
-  const samples = generateSamples(GRID_RES);
+  const samples = await generateSamples(GRID_RES);
   let sampleIndex = 0;
   const main = buildMainScene(THREE, scene, samples, sampleIndex);
   const mainFlow = new FlowSimulator(THREE, main.root, { edges: main.edges, nodeMeshes: main.nodeMeshes, onNodeFire });
@@ -307,7 +307,7 @@ function init() {
   samples.forEach((s, i) => {
     const btn = document.createElement("button");
     btn.className = "sample-thumb" + (i === 0 ? " active" : "");
-    btn.title = `${s.label} (${s.sub}) — synthetic sample`;
+    btn.title = `${s.label} (${s.sub})`;
     btn.appendChild(makeThumbnailCanvas(s));
     const nameTag = document.createElement("span");
     nameTag.className = "sample-name";

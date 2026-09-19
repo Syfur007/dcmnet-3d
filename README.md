@@ -52,11 +52,8 @@ On top of that:
   (CBFFM and DFEM are modeled exactly from the paper's own equations; the
   VSS block and the EfficientNet-B2 block are faithful, representative
   breakdowns). Press **"← Back"** to fly back out.
-* A **sample picker** (bottom-right) swaps the input image / mask for one
-  of four synthetic, procedurally-generated samples themed after the
-  paper's four modalities (skin lesion, polyp, thyroid nodule, pancreas) —
-  none are real medical photographs, so this repo is safe to publish
-  publicly forever.
+* A **sample picker** (bottom-right) swaps the input image / mask for bundled
+  skin-lesion and polyp image/mask pairs from `assets/`.
 
 ---
 
@@ -74,7 +71,7 @@ On top of that:
 │   │                    at both the full-pipeline and "zoomed in" levels
 │   ├── flow.js          # the data-flow / "pulse" animation engine
 │   ├── labels.js        # floating text-sprite labels
-│   ├── samples.js       # 4 procedural sample image+mask generators
+│   ├── samples.js       # bundled sample image+mask loader
 │   └── main.js          # renderer, camera, controls, drill-down state
 │                         machine, sample picker, render loop
 ├── .nojekyll
@@ -138,21 +135,18 @@ No CI, no build step required.
 
 ---
 
-## Using this on a smart board / projector
+## Customizing
 
-* Press **⛶ Fullscreen** (bottom bar) for a distraction-free view.
-* One-finger drag rotates, pinch (or scroll) zooms, two-finger drag pans.
-* Tap any block for a short explanation; tap **🔍 Explore Inside** on a
-  zoomable block (every encoder stage, CBFFM, decoder block, and the
-  segmentation head) to fly in and see its real internal steps.
-* Press **← Back** (top-left, appears once you're zoomed in) or **Esc** to
-  return to the full architecture.
-* Swap the input sample from the picker (bottom-right) to show the pipeline
-  reacting to a different "image" — the R/G/B input cubes and the mask
-  output cubes update instantly.
-* Use **Speed** to slow the animation while explaining a stage, or **Pause**
-  to freeze it entirely. **Reset View** returns the camera to the default
-  framing (or backs out of a zoomed-in view first).
+* **Change the architecture layout / sizes / descriptions / internals** →
+  edit `js/architecture.js` only — positions are computed automatically
+  from each block's `grid`/`depth`, so resizing one block re-flows
+  everything downstream of it.
+* **Add/replace sample images** → add an image/mask pair under `assets/` and
+  register their paths in `js/samples.js`.
+* **Change colors** → edit `PALETTE` in `js/architecture.js` and the
+  matching CSS variables in `style.css`.
+* **Tune the cube density** → `PITCH` (cube spacing) lives in `js/tensor.js`;
+  each block's `grid`/`depth` live in `js/architecture.js`.
 
 ---
 
@@ -163,8 +157,8 @@ No CI, no build step required.
   [CC BY-NC-ND 4.0](https://creativecommons.org/licenses/by-nc-nd/4.0/).
   This project is an independent, original educational visualization of the
   publicly described network structure — it does not reproduce any of the
-  paper's figures, text, or data. The sample images are procedurally
-  generated placeholders, not real medical photographs.
+  paper's figures, text, or data. The sample images are bundled assets for
+  the interactive demo.
 * **Code in this repository**: MIT-licensed — see [`LICENSE`](./LICENSE).
   Feel free to fork, adapt, and reuse for your own coursework.
 * Built by **Syfur Rahman** (Roll 21CSE032, Session 2020–21), BSc CSE,

@@ -1,2 +1,2 @@
-Drop your own input-image / mask files here if you want to replace the
-procedurally generated placeholder textures (see README.md > Customizing).
+Input-image / mask assets used by the sample picker live in this directory.
+See README.md > Customizing to register additional pairs.
